@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Tangkap Makanan Kesukaan 🍦</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- MediaPipe CDN for Real-time Hand Tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- Google Fonts: Fredoka & Quicksand for playful design -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Fredoka', 'Quicksand', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 3px solid rgba(255, 255, 255, 0.6);
+    }
+
+    .pulse-animation {
+      animation: pulseGlow 1.8s infinite ease-in-out;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(255, 99, 132, 0.5)); }
+      50% { transform: scale(1.05); filter: drop-shadow(0 0 20px rgba(255, 99, 132, 0.8)); }
+    }
+
+    .float-item {
+      animation: floating 3s ease-in-out infinite;
+    }
+
+    @keyframes floating {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-10px) rotate(5deg); }
+    }
+
+    canvas {
+      border-radius: 1.5rem;
+      box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Custom Scrollbar for list items */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #ff7675;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-pink-300 via-purple-300 to-indigo-400 min-h-screen flex flex-col items-center justify-center p-2 sm:p-4 overflow-x-hidden text-gray-800">
+
+  <!-- Main Container -->
+  <div class="w-full max-w-4xl flex flex-col items-center justify-center relative">
+    
+    <!-- Header Title -->
+    <header class="text-center mb-3">
+      <h1 class="text-3xl sm:text-5xl font-black text-white drop-shadow-lg flex items-center justify-center gap-3">
+        <span class="inline-block float-item">🍦</span> 
+        TANGKAP MAKANAN KESUKAAN! 
+        <span class="inline-block float-item" style="animation-delay: 1.5s;">🍕</span>
+      </h1>
+      <p class="text-white text-sm sm:text-base font-semibold drop-shadow opacity-95">
+        Gerakkan tanganmu di depan kamera untuk menangkap makanan yang dicari!
+      </p>
+    </header>
+
+    <!-- Game Canvas Screen & Overlay -->
+    <div id="game-viewport" class="relative w-full aspect-[4/3] max-h-[620px] rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-slate-900 flex items-center justify-center">
+      
+      <!-- Video Element for WebCam (Hidden, processed by MediaPipe) -->
+      <video id="webcam" class="hidden" playsinline></video>
+
+      <!-- Main Game Canvas -->
+      <canvas id="game-canvas" class="w-full h-full object-cover"></canvas>
+
+      <!-- HUD Top Bar (Score, Timer, Prompt) -->
+      <div id="hud-bar" class="absolute top-3 left-3 right-3 flex justify-between items-center pointer-events-none z-10 gap-2">
+        
+        <!-- Score Box -->
+        <div class="glass-card px-4 py-2 rounded-2xl shadow-md flex items-center gap-2 border-2 border-yellow-300">
+          <i class="fa-solid fa-star text-yellow-500 text-xl sm:text-2xl animate-bounce"></i>
+          <div>
+            <div class="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-wider">Skor</div>
+            <div id="score-display" class="text-xl sm:text-3xl font-black text-pink-600 leading-none">0</div>
+          </div>
+        </div>
+
+        <!-- Target Instruction Box -->
+        <div id="target-card" class="pulse-animation bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 text-slate-900 px-4 py-2 sm:px-6 sm:py-2.5 rounded-full shadow-xl flex items-center gap-2 border-2 border-white">
+          <span class="text-xs sm:text-sm font-bold uppercase tracking-wide">CARI:</span>
+          <div id="target-food-display" class="text-lg sm:text-2xl font-black flex items-center gap-1.5 text-slate-900">
+            <span id="target-emoji" class="text-2xl sm:text-3xl">🍦</span>
+            <span id="target-name">Es Krim</span>
+          </div>
+        </div>
+
+        <!-- Timer Box -->
+        <div class="glass-card px-4 py-2 rounded-2xl shadow-md flex items-center gap-2 border-2 border-blue-300">
+          <i class="fa-solid fa-stopwatch text-blue-500 text-xl sm:text-2xl"></i>
+          <div>
+            <div class="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-wider">Waktu</div>
+            <div id="timer-display" class="text-xl sm:text-3xl font-black text-blue-600 leading-none">60s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start Modal Screen -->
+      <div id="start-modal" class="absolute inset-0 bg-slate-900/80 backdrop-blur-md z-20 flex flex-col items-center justify-center p-6 text-center text-white">
+        <div class="bg-white/10 p-4 sm:p-8 rounded-3xl border border-white/20 max-w-md w-full shadow-2xl flex flex-col items-center">
+          <div class="text-6xl sm:text-7xl mb-3 animate-bounce">🖐️🍦</div>
+          <h2 class="text-2xl sm:text-3xl font-black mb-2 text-yellow-300">Halo Adik-Adik!</h2>
+          <p class="text-sm sm:text-base text-gray-200 mb-6 leading-relaxed">
+            Izinkan akses kamera, lalu tangkap makanan yang jatuh di layar sesuai dengan petunjuk menggunakan tanganmu!
+          </p>
+
+          <button id="btn-start" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-500 hover:to-green-600 text-slate-900 font-black text-xl shadow-lg hover:shadow-green-500/50 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center gap-3 cursor-pointer">
+            <i class="fa-solid fa-play text-2xl"></i>
+            MULAI BERMAIN
+          </button>
+
+          <!-- Toggle control fallback mode -->
+          <div class="mt-4 flex items-center gap-2 text-xs text-gray-300">
+            <i class="fa-solid fa-circle-info text-yellow-400"></i>
+            <span>Bisa juga dimainkan dengan sentuhan/mouse jika kamera tidak aktif.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Over Modal Screen -->
+      <div id="gameover-modal" class="hidden absolute inset-0 bg-slate-900/90 backdrop-blur-md z-30 flex flex-col items-center justify-center p-6 text-center text-white">
+        <div class="bg-white/10 p-6 sm:p-8 rounded-3xl border border-white/20 max-w-md w-full shadow-2xl flex flex-col items-center">
+          <div id="trophy-icon" class="text-6xl mb-3">🏆</div>
+          <h2 class="text-3xl font-black text-yellow-300 mb-1">Permainan Selesai!</h2>
+          <p class="text-sm text-gray-300 mb-4">Kamu sangat hebat!</p>
+
+          <!-- Final Score Card -->
+          <div class="w-full bg-white/10 rounded-2xl p-4 mb-6 border border-white/10 flex justify-around items-center">
+            <div>
+              <div class="text-xs text-gray-300 uppercase font-bold">Skor Akhir</div>
+              <div id="final-score" class="text-4xl font-black text-yellow-400">0</div>
+            </div>
+            <div class="h-10 w-[2px] bg-white/20"></div>
+            <div>
+              <div class="text-xs text-gray-300 uppercase font-bold">Bintang</div>
+              <div id="final-stars" class="text-2xl text-yellow-400">⭐⭐⭐</div>
+            </div>
+          </div>
+
+          <button id="btn-restart" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-black text-xl shadow-lg hover:shadow-rose-500/50 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center gap-3 cursor-pointer">
+            <i class="fa-solid fa-rotate-right text-2xl"></i>
+            MAIN LAGI
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Controls & Status Indicator -->
+    <div class="w-full mt-3 flex justify-between items-center text-xs sm:text-sm text-white font-medium px-2">
+      <div class="flex items-center gap-2 bg-black/30 backdrop-blur px-3 py-1.5 rounded-full border border-white/20">
+        <span id="camera-status-dot" class="w-3 h-3 rounded-full bg-yellow-400 animate-pulse"></span>
+        <span id="camera-status-text">Mempersiapkan Kamera...</span>
+      </div>
+      
+      <button id="btn-sound-toggle" class="bg-black/30 backdrop-blur hover:bg-black/50 px-3 py-1.5 rounded-full border border-white/20 flex items-center gap-2 cursor-pointer transition">
+        <i id="sound-icon" class="fa-solid fa-volume-high text-yellow-400"></i>
+        <span id="sound-text">Suara: ON</span>
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    // Food items dictionary with names, emojis, and colors
+    const FOOD_LIST = [
+      { id: 'icecream', name: 'Es Krim', emoji: '🍦', color: '#FF7675' },
+      { id: 'pizza', name: 'Pizza', emoji: '🍕', color: '#FAB1A0' },
+      { id: 'burger', name: 'Burger', emoji: '🍔', color: '#FFEAA7' },
+      { id: 'donut', name: 'Donat', emoji: '🍩', color: '#FD79A8' },
+      { id: 'apple', name: 'Apel Merah', emoji: '🍎', color: '#FF7675' },
+      { id: 'banana', name: 'Pisang', emoji: '🍌', color: '#FDCB6E' },
+      { id: 'fries', name: 'Kentang Goreng', emoji: '🍟', color: '#FFEAA7' },
+      { id: 'cupcake', name: 'Kue Cupcake', emoji: '🧁', color: '#E84393' },
+      { id: 'watermelon', name: 'Semangka', emoji: '🍉', color: '#00B894' },
+      { id: 'popcorn', name: 'Popcorn', emoji: '🍿', color: '#FDCB6E' }
+    ];
+
+    // DOM Elements
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('game-canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    
+    const startModal = document.getElementById('start-modal');
+    const gameoverModal = document.getElementById('gameover-modal');
+    const btnStart = document.getElementById('btn-start');
+    const btnRestart = document.getElementById('btn-restart');
+    
+    const scoreDisplay = document.getElementById('score-display');
+    const timerDisplay = document.getElementById('timer-display');
+    const targetEmoji = document.getElementById('target-emoji');
+    const targetName = document.getElementById('target-name');
+    const finalScore = document.getElementById('final-score');
+    const finalStars = document.getElementById('final-stars');
+    
+    const cameraStatusDot = document.getElementById('camera-status-dot');
+    const cameraStatusText = document.getElementById('camera-status-text');
+    const btnSoundToggle = document.getElementById('btn-sound-toggle');
+    const soundIcon = document.getElementById('sound-icon');
+    const soundText = document.getElementById('sound-text');
+
+    // Game Variables
+    let isPlaying = false;
+    let score = 0;
+    let timeLeft = 60;
+    let gameTimer = null;
+    let spawnTimer = null;
+    let currentTargetFood = null;
+    let fallingObjects = [];
+    let particles = [];
+    let soundEnabled = true;
+    
+    // Hand tracking positions (x, y normalized or pixels)
+    let detectedHands = [];
+    let mouseTouchHand = { x: -100, y: -100, active: false };
+
+    // Web Audio API Synthesizer for lag-free audio
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new AudioContext();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Fungsi Suara Umpan Balik Ucapan (Text-to-Speech Feedback)
+    function speakText(text) {
+      if (!soundEnabled) return;
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Hentikan ucapan sebelumnya agar responsif
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'id-ID';
+        utterance.rate = 1.15; // Kecepatan bicara ceria
+        utterance.pitch = 1.3;  // Nada lebih ramah anak
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    function playSoundEffect(type) {
+      if (!soundEnabled) return;
+      initAudio();
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+
+      if (type === 'catch_correct') {
+        // Nada ceria beruntun (Arpeggio) untuk BENAR
+        const notes = [523.25, 659.25, 783.99]; // Chord C Mayor
+        notes.forEach((freq, i) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + (i * 0.1));
+          gain.gain.setValueAtTime(0.3, now + (i * 0.1));
+          gain.gain.exponentialRampToValueAtTime(0.01, now + (i * 0.1) + 0.2);
+          osc.start(now + (i * 0.1));
+          osc.stop(now + (i * 0.1) + 0.2);
+        });
+      } else if (type === 'catch_wrong') {
+        // Nada rendah (Buzzer) untuk SALAH
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now); 
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } else if (type === 'win') {
+        // Fanfare motif
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((freq, idx) => {
+          const noteOsc = audioCtx.createOscillator();
+          const noteGain = audioCtx.createGain();
+          noteOsc.connect(noteGain);
+          noteGain.connect(audioCtx.destination);
+
+          noteOsc.type = 'triangle';
+          noteOsc.frequency.setValueAtTime(freq, now + idx * 0.1);
+          noteGain.gain.setValueAtTime(0.2, now + idx * 0.1);
+          noteGain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.25);
+
+          noteOsc.start(now + idx * 0.1);
+          noteOsc.stop(now + idx * 0.1 + 0.25);
+        });
+      }
+    }
+
+    // Initialize MediaPipe Hands
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.65,
+      minTrackingConfidence: 0.65
+    });
+
+    hands.onResults(onHandResults);
+
+    // Initialize Camera Feed
+    let cameraInstance = null;
+    
+    function setupCamera() {
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 1280,
+        height: 720
+      });
+
+      cameraInstance.start()
+        .then(() => {
+          cameraStatusDot.classList.remove('bg-yellow-400');
+          cameraStatusDot.classList.add('bg-green-400');
+          cameraStatusText.innerText = "Kamera Aktif";
+        })
+        .catch((err) => {
+          console.warn("Camera failed to start, fallback to touch/mouse mode.", err);
+          cameraStatusDot.classList.remove('bg-yellow-400');
+          cameraStatusDot.classList.add('bg-blue-400');
+          cameraStatusText.innerText = "Mode Sentuhan/Mouse (Kamera Nonaktif)";
+        });
+    }
+
+    function onHandResults(results) {
+      // Synchronize Canvas Size with Container Aspect Ratio
+      const rect = canvasElement.getBoundingClientRect();
+      if (canvasElement.width !== rect.width || canvasElement.height !== rect.height) {
+        canvasElement.width = rect.width;
+        canvasElement.height = rect.height;
+      }
+
+      const cw = canvasElement.width;
+      const ch = canvasElement.height;
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, cw, ch);
+
+      // Draw Video Feed (Mirrored)
+      if (results.image) {
+        canvasCtx.translate(cw, 0);
+        canvasCtx.scale(-1, 1);
+        canvasCtx.drawImage(results.image, 0, 0, cw, ch);
+        canvasCtx.restore();
+      } else {
+        // Fallback canvas background if no video
+        canvasCtx.fillStyle = '#1e293b';
+        canvasCtx.fillRect(0, 0, cw, ch);
+        canvasCtx.restore();
+      }
+
+      // Collect tracked hand pointer points (Index Fingertips / Palm centers)
+      detectedHands = [];
+
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          // Index Finger Tip is Landmark #8
+          const indexTip = landmarks[8];
+          // Mirroring X coordinate because video feed is mirrored
+          const handX = (1 - indexTip.x) * cw;
+          const handY = indexTip.y * ch;
+
+          detectedHands.push({ x: handX, y: handY });
+
+          // Draw Glowing Magic Hand Pointer
+          drawMagicHandCursor(handX, handY);
+        }
+      }
+
+      // If touch/mouse is active, include as virtual hand
+      if (mouseTouchHand.active) {
+        detectedHands.push({ x: mouseTouchHand.x, y: mouseTouchHand.y });
+        drawMagicHandCursor(mouseTouchHand.x, mouseTouchHand.y);
+      }
+
+      // Render Game Entities if playing
+      if (isPlaying) {
+        updateAndRenderFoods(cw, ch);
+        updateAndRenderParticles();
+      }
+    }
+
+    function drawMagicHandCursor(x, y) {
+      canvasCtx.save();
+      
+      // Outer Glow Aura
+      const gradient = canvasCtx.createRadialGradient(x, y, 5, x, y, 35);
+      gradient.addColorStop(0, 'rgba(255, 230, 0, 0.9)');
+      gradient.addColorStop(0.5, 'rgba(255, 105, 180, 0.5)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+      canvasCtx.beginPath();
+      canvasCtx.arc(x, y, 35, 0, Math.PI * 2);
+      canvasCtx.fillStyle = gradient;
+      canvasCtx.fill();
+
+      // Inner Hand Symbol / Sparkle Ring
+      canvasCtx.beginPath();
+      canvasCtx.arc(x, y, 18, 0, Math.PI * 2);
+      canvasCtx.fillStyle = '#FFDD59';
+      canvasCtx.fill();
+      canvasCtx.lineWidth = 3;
+      canvasCtx.strokeStyle = '#FFFFFF';
+      canvasCtx.stroke();
+
+      // Hand icon inside pointer
+      canvasCtx.font = '16px sans-serif';
+      canvasCtx.textAlign = 'center';
+      canvasCtx.textBaseline = 'middle';
+      canvasCtx.fillText('✋', x, y);
+
+      canvasCtx.restore();
+    }
+
+    function pickNewTargetFood() {
+      const randomIndex = Math.floor(Math.random() * FOOD_LIST.length);
+      currentTargetFood = FOOD_LIST[randomIndex];
+      
+      targetEmoji.innerText = currentTargetFood.emoji;
+      targetName.innerText = currentTargetFood.name;
+
+      // Animate card pulse
+      const targetCard = document.getElementById('target-card');
+      targetCard.classList.remove('pulse-animation');
+      void targetCard.offsetWidth; // trigger reflow
+      targetCard.classList.add('pulse-animation');
+
+      // Membacakan instruksi makanan baru yang harus dicari
+      speakText('Cari ' + currentTargetFood.name);
+    }
+
+    function spawnFallingFood() {
+      if (!isPlaying) return;
+
+      const cw = canvasElement.width || 800;
+      // 60% chance to spawn current target food, 40% chance for random food
+      const isTarget = Math.random() < 0.6;
+      const foodData = isTarget ? currentTargetFood : FOOD_LIST[Math.floor(Math.random() * FOOD_LIST.length)];
+
+      const itemSize = Math.min(Math.max(cw * 0.1, 50), 80); // Responsive item size
+      const xPos = Math.random() * (cw - itemSize * 2) + itemSize;
+
+      fallingObjects.push({
+        id: Math.random(),
+        food: foodData,
+        x: xPos,
+        y: -itemSize,
+        size: itemSize,
+        speed: Math.random() * 2 + 2.5, // Falling speed
+        rotation: Math.random() * Math.PI,
+        rotSpeed: (Math.random() - 0.5) * 0.05
+      });
+    }
+
+    function updateAndRenderFoods(cw, ch) {
+      for (let i = fallingObjects.length - 1; i >= 0; i--) {
+        const item = fallingObjects[i];
+
+        // Move down
+        item.y += item.speed;
+        item.rotation += item.rotSpeed;
+
+        // Draw Food Emoji
+        canvasCtx.save();
+        canvasCtx.translate(item.x, item.y);
+        canvasCtx.rotate(item.rotation);
+
+        // Draw subtle shadow behind food
+        canvasCtx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+        canvasCtx.shadowBlur = 10;
+        canvasCtx.shadowOffsetY = 5;
+
+        canvasCtx.font = `${item.size}px sans-serif`;
+        canvasCtx.textAlign = 'center';
+        canvasCtx.textBaseline = 'middle';
+        canvasCtx.fillText(item.food.emoji, 0, 0);
+        canvasCtx.restore();
+
+        // Collision Check with any Detected Hand
+        let isCaught = false;
+        for (const hand of detectedHands) {
+          const distance = Math.hypot(hand.x - item.x, hand.y - item.y);
+          if (distance < item.size * 0.75) {
+            isCaught = true;
+            handleCatch(item);
+            break;
+          }
+        }
+
+        // Remove item if caught or off-screen
+        if (isCaught || item.y > ch + item.size) {
+          fallingObjects.splice(i, 1);
+        }
+      }
+    }
+
+    function handleCatch(item) {
+      const isCorrect = item.food.id === currentTargetFood.id;
+
+      if (isCorrect) {
+        score += 10;
+        scoreDisplay.innerText = score;
+        playSoundEffect('catch_correct');
+        speakText('Hore, jawabanmu benar!');
+        createExplosionParticles(item.x, item.y, item.food.emoji, '#FFDD59');
+        
+        // Pick new food target to keep game dynamic!
+        pickNewTargetFood();
+      } else {
+        score = Math.max(0, score - 5);
+        scoreDisplay.innerText = score;
+        playSoundEffect('catch_wrong');
+        speakText('Yah, jawabanmu salah!');
+        createExplosionParticles(item.x, item.y, '❌', '#FF7675');
+      }
+    }
+
+    function createExplosionParticles(x, y, symbol, color) {
+      for (let i = 0; i < 12; i++) {
+        const angle = (Math.PI * 2 / 12) * i;
+        const speed = Math.random() * 4 + 2;
+        particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: Math.random() * 14 + 10,
+          alpha: 1,
+          color: color,
+          symbol: i % 2 === 0 ? symbol : '✨'
+        });
+      }
+    }
+
+    function updateAndRenderParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.03;
+
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        canvasCtx.save();
+        canvasCtx.globalAlpha = p.alpha;
+        canvasCtx.font = `${p.size}px sans-serif`;
+        canvasCtx.textAlign = 'center';
+        canvasCtx.textBaseline = 'middle';
+        canvasCtx.fillText(p.symbol, p.x, p.y);
+        canvasCtx.restore();
+      }
+    }
+
+    function startGame() {
+      initAudio();
+      score = 0;
+      timeLeft = 60;
+      fallingObjects = [];
+      particles = [];
+      isPlaying = true;
+
+      scoreDisplay.innerText = score;
+      timerDisplay.innerText = `${timeLeft}s`;
+
+      startModal.classList.add('hidden');
+      gameoverModal.classList.add('hidden');
+
+      pickNewTargetFood();
+
+      // Main Timer Loop
+      clearInterval(gameTimer);
+      gameTimer = setInterval(() => {
+        timeLeft--;
+        timerDisplay.innerText = `${timeLeft}s`;
+
+        if (timeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+
+      // Spawning loop
+      clearInterval(spawnTimer);
+      spawnTimer = setInterval(() => {
+        spawnFallingFood();
+      }, 1100);
+    }
+
+    function endGame() {
+      isPlaying = false;
+      clearInterval(gameTimer);
+      clearInterval(spawnTimer);
+
+      finalScore.innerText = score;
+
+      // Assign Stars
+      if (score >= 100) {
+        finalStars.innerText = '⭐⭐⭐';
+      } else if (score >= 50) {
+        finalStars.innerText = '⭐⭐';
+      } else {
+        finalStars.innerText = '⭐';
+      }
+
+      playSoundEffect('win');
+      gameoverModal.classList.remove('hidden');
+    }
+
+    btnStart.addEventListener('click', () => {
+      setupCamera();
+      startGame();
+    });
+
+    btnRestart.addEventListener('click', startGame);
+
+    // Toggle Sound
+    btnSoundToggle.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      if (soundEnabled) {
+        soundIcon.className = "fa-solid fa-volume-high text-yellow-400";
+        soundText.innerText = "Suara: ON";
+      } else {
+        soundIcon.className = "fa-solid fa-volume-xmark text-gray-400";
+        soundText.innerText = "Suara: OFF";
+      }
+    });
+
+    // Touch & Mouse Fallback Controls
+    function handlePointerMove(e) {
+      const rect = canvasElement.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      mouseTouchHand.x = clientX - rect.left;
+      mouseTouchHand.y = clientY - rect.top;
+      mouseTouchHand.active = true;
+    }
+
+    canvasElement.addEventListener('mousemove', handlePointerMove);
+    canvasElement.addEventListener('touchmove', handlePointerMove, { passive: true });
+    canvasElement.addEventListener('touchstart', handlePointerMove, { passive: true });
+
+    window.addEventListener('mouseup', () => { mouseTouchHand.active = false; });
+    window.addEventListener('touchend', () => { mouseTouchHand.active = false; });
+
+  </script>
+</body>
+</html>
